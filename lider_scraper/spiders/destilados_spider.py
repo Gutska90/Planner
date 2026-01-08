@@ -421,11 +421,11 @@ class DestiladosSpider(scrapy.Spider):
                 else:
                     self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
                     break
-            
-            # Verificar límite de páginas
-            if page_number >= max_pages:
-                self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
-                break
+                
+                # Verificar límite de páginas después de incrementar
+                if page_number >= max_pages:
+                    self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
+                    break
                     
             except Exception as e:
                 self.logger.error(f"❌ Error procesando página {page_number}: {e}")
