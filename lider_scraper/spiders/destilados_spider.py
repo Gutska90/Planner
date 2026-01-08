@@ -109,14 +109,15 @@ class DestiladosSpider(scrapy.Spider):
         },
     }
 
-    def __init__(self, *args, **kwargs):
-        super(DestiladosSpider, self).__init__(*args, **kwargs)
-        self.proxies = []
-        self.current_proxy_index = 0
-        self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
-        self.two_captcha_solver = None
-        self.use_selenium = kwargs.get('use_selenium', 'true').lower() == 'true'
-        self.driver = None
+            def __init__(self, *args, **kwargs):
+                super(DestiladosSpider, self).__init__(*args, **kwargs)
+                self.proxies = []
+                self.current_proxy_index = 0
+                self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
+                self.two_captcha_solver = None
+                self.use_selenium = kwargs.get('use_selenium', 'true').lower() == 'true'
+                self.headless = kwargs.get('headless', 'true').lower() == 'true'  # Por defecto headless
+                self.driver = None
         
         # Inicializar captcha solver si hay API key
         if self.two_captcha_api_key and TWOCAPTCHA_AVAILABLE:
@@ -697,13 +698,27 @@ class DestiladosSpider(scrapy.Spider):
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-blink-features=AutomationControlled')
-            # No usar headless para evitar detección
+            
+            # Agregar modo headless si está habilitado
+            if self.headless:
+                options.add_argument('--headless=new')
+                options.add_argument('--disable-gpu')
+                self.logger.info("🔇 Modo headless activado (navegador no visible)")
+            else:
+                self.logger.info("👁️  Modo visible activado (navegador visible)")
+            
             # Intentar inicialización simple primero
             try:
                 self.driver = uc.Chrome(options=options, version_main=None)
             except:
                 # Fallback: sin opciones adicionales
-                self.driver = uc.Chrome(version_main=None)
+                if self.headless:
+                    fallback_options = uc.ChromeOptions()
+                    fallback_options.add_argument('--headless=new')
+                    fallback_options.add_argument('--disable-gpu')
+                    self.driver = uc.Chrome(options=fallback_options, version_main=None)
+                else:
+                    self.driver = uc.Chrome(version_main=None)
             
             self.driver.set_page_load_timeout(60)
             self.driver.implicitly_wait(10)
