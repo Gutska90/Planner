@@ -21,10 +21,18 @@ class JsonPipeline:
     
     def __init__(self):
         self.items = []
-        self.filename = 'lider_products.json'
+        self.filename = None
 
     def open_spider(self, spider):
         """Abrir spider"""
+        # Determinar nombre del archivo basado en el nombre del spider
+        if spider.name == 'categoria':
+            self.filename = 'lider_products.json'
+        elif spider.name == 'destilados':
+            self.filename = 'destilados_products.json'
+        else:
+            self.filename = f'{spider.name}_products.json'
+        
         self.items = []
         spider.logger.info(f'Pipeline JSON inicializado: {self.filename}')
 
@@ -55,13 +63,21 @@ class ExcelPipeline:
     
     def __init__(self):
         self.items = []
-        self.filename = 'lider_products.xlsx'
+        self.filename = None
 
     def open_spider(self, spider):
         """Abrir spider"""
         if not OPENPYXL_AVAILABLE:
             spider.logger.warning('openpyxl no disponible, desactivando ExcelPipeline')
             return
+        
+        # Determinar nombre del archivo basado en el nombre del spider
+        if spider.name == 'categoria':
+            self.filename = 'lider_products.xlsx'
+        elif spider.name == 'destilados':
+            self.filename = 'destilados_products.xlsx'
+        else:
+            self.filename = f'{spider.name}_products.xlsx'
         
         self.items = []
         self.wb = Workbook()
