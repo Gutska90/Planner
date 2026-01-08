@@ -367,12 +367,20 @@ class CarnesYPescadosSpider(scrapy.Spider):
     def _process_all_pages_with_pagination(self):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
+        max_pages = 20  # Límite máximo de páginas para evitar loops infinitos
+        seen_urls = set()  # Para detectar si estamos en la misma página
         
-        while True:
+        while page_number <= max_pages:
             try:
                 # Obtener el HTML de Selenium de la página actual
                 page_source = self.driver.page_source
                 current_url = self.driver.current_url
+                
+                # Verificar si ya procesamos esta URL (evitar loops infinitos)
+                if current_url in seen_urls:
+                    self.logger.warning(f"⚠️  URL repetida detectada: {current_url}. Deteniendo paginación para evitar loop infinito.")
+                    break
+                seen_urls.add(current_url)
                 
                 # Crear response con el HTML de Selenium
                 response = HtmlResponse(
@@ -390,6 +398,11 @@ class CarnesYPescadosSpider(scrapy.Spider):
                 
                 self.logger.info(f"✅ Página {page_number}: {page_items} productos extraídos")
                 
+                # Verificar límite de páginas
+                if page_number >= max_pages:
+                    self.logger.info(f"✅ Límite de {max_pages} páginas alcanzado. Total de páginas procesadas: {page_number}")
+                    break
+                
                 # Buscar botón de siguiente página
                 next_button = self._find_next_page_button()
                 
@@ -404,6 +417,17 @@ class CarnesYPescadosSpider(scrapy.Spider):
                         # Intentar hacer click
                         next_button.click()
                         time.sleep(3)  # Esperar a que cargue la nueva página
+                        
+                        # Verificar que la URL cambió después del click
+                        new_url = self.driver.current_url
+                        if new_url == current_url:
+                            self.logger.warning("⚠️  La URL no cambió después del click. Puede haber un problema con la paginación.")
+                            # Esperar un poco más
+                            time.sleep(2)
+                            new_url = self.driver.current_url
+                            if new_url == current_url:
+                                self.logger.warning("⚠️  La URL aún no cambió. Deteniendo paginación.")
+                                break
                         
                         # Hacer scroll para cargar productos
                         self.logger.info("📜 Haciendo scroll para cargar productos...")

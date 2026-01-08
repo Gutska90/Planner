@@ -44,11 +44,27 @@ class JsonPipeline:
             # Filtrar items de debug/blocked
             valid_items = [item for item in self.items if not item.get('_blocked') and not item.get('_debug')]
             
+            # Eliminar duplicados basándose en product_url (campo único)
+            seen_urls = set()
+            unique_items = []
+            duplicates_count = 0
+            
+            for item in valid_items:
+                product_url = item.get('product_url')
+                if product_url and product_url not in seen_urls:
+                    seen_urls.add(product_url)
+                    unique_items.append(item)
+                elif product_url:
+                    duplicates_count += 1
+            
+            if duplicates_count > 0:
+                spider.logger.info(f'🔄 Eliminados {duplicates_count} registros duplicados')
+            
             output_file = os.path.join(os.getcwd(), self.filename)
             with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(valid_items, f, ensure_ascii=False, indent=2)
+                json.dump(unique_items, f, ensure_ascii=False, indent=2)
             
-            spider.logger.info(f'✅ Datos guardados en {output_file}: {len(valid_items)} productos')
+            spider.logger.info(f'✅ Datos guardados en {output_file}: {len(unique_items)} productos únicos (de {len(valid_items)} totales)')
         else:
             spider.logger.warning('No hay productos para guardar en JSON')
 
@@ -112,10 +128,39 @@ class ExcelPipeline:
             # Filtrar items válidos
             valid_items = [item for item in self.items if not item.get('_blocked') and not item.get('_debug')]
             
+            # Eliminar duplicados basándose en product_url (campo único)
+            seen_urls = set()
+            unique_items = []
+            duplicates_count = 0
+            
+            for item in valid_items:
+                product_url = item.get('product_url')
+                if product_url and product_url not in seen_urls:
+                    seen_urls.add(product_url)
+                    unique_items.append(item)
+                elif product_url:
+                    duplicates_count += 1
+            
+            # Reconstruir el workbook con solo items únicos
+            if duplicates_count > 0:
+                spider.logger.info(f'🔄 Eliminados {duplicates_count} registros duplicados del Excel')
+                # Limpiar la hoja y volver a crear
+                self.ws.delete_rows(2, self.ws.max_row)  # Eliminar todas las filas excepto el header
+                # Agregar items únicos
+                for idx, item in enumerate(unique_items, start=2):
+                    self.ws.cell(row=idx, column=1, value=item.get('category_url', ''))
+                    self.ws.cell(row=idx, column=2, value=item.get('name', ''))
+                    self.ws.cell(row=idx, column=3, value=item.get('price', ''))
+                    self.ws.cell(row=idx, column=4, value=item.get('discount_price', ''))
+                    url_cell = self.ws.cell(row=idx, column=5, value=item.get('product_url', ''))
+                    if item.get('product_url'):
+                        url_cell.hyperlink = item.get('product_url')
+                        url_cell.font = Font(underline="single", color="0563C1")
+            
             output_file = os.path.join(os.getcwd(), self.filename)
             self.wb.save(output_file)
             
-            spider.logger.info(f'✅ Datos guardados en {output_file}: {len(valid_items)} productos')
+            spider.logger.info(f'✅ Datos guardados en {output_file}: {len(unique_items)} productos únicos (de {len(valid_items)} totales)')
         else:
             spider.logger.warning('No hay productos para guardar en Excel')
 

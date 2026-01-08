@@ -365,12 +365,28 @@ class SnacksYPicoteoSpider(scrapy.Spider):
     def _process_all_pages_with_pagination(self):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
+        max_pages = 20  # Límite máximo de páginas para evitar loops infinitos
+        seen_urls = set()  # Para detectar si estamos en la misma página
+        consecutive_same_url = 0  # Contador para detectar URLs repetidas consecutivas
         
-        while True:
+        while page_number <= max_pages:
             try:
                 # Obtener el HTML de Selenium de la página actual
                 page_source = self.driver.page_source
                 current_url = self.driver.current_url
+                
+                # Verificar si ya procesamos esta URL (evitar loops infinitos)
+                if current_url in seen_urls:
+                    consecutive_same_url += 1
+                    if consecutive_same_url >= 2:
+                        self.logger.warning(f"⚠️  URL repetida detectada {consecutive_same_url} veces: {current_url}. Deteniendo paginación para evitar loop infinito.")
+                        break
+                    else:
+                        self.logger.warning(f"⚠️  URL repetida detectada. Esperando antes de continuar...")
+                        time.sleep(3)
+                else:
+                    consecutive_same_url = 0  # Resetear contador si la URL es nueva
+                    seen_urls.add(current_url)
                 
                 # Crear response con el HTML de Selenium
                 response = HtmlResponse(
@@ -388,6 +404,11 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                 
                 self.logger.info(f"✅ Página {page_number}: {page_items} productos extraídos")
                 
+                # Verificar límite de páginas
+                if page_number >= max_pages:
+                    self.logger.info(f"✅ Límite de {max_pages} páginas alcanzado. Total de páginas procesadas: {page_number}")
+                    break
+                
                 # Buscar botón de siguiente página
                 next_button = self._find_next_page_button()
                 
@@ -399,9 +420,27 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                         self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
                         time.sleep(1)
                         
+                        # Guardar URL antes del click para verificar cambio
+                        url_before_click = self.driver.current_url
+                        
                         # Intentar hacer click
                         next_button.click()
                         time.sleep(3)  # Esperar a que cargue la nueva página
+                        
+                        # Verificar que la URL cambió después del click
+                        url_after_click = self.driver.current_url
+                        if url_after_click == url_before_click:
+                            self.logger.warning("⚠️  La URL no cambió después del click. Esperando más tiempo...")
+                            time.sleep(3)
+                            url_after_click = self.driver.current_url
+                            if url_after_click == url_before_click:
+                                self.logger.warning("⚠️  La URL aún no cambió después de esperar. El botón puede estar deshabilitado. Deteniendo paginación.")
+                                break
+                        
+                        # Verificar que no estamos en una URL que ya procesamos
+                        if url_after_click in seen_urls:
+                            self.logger.warning(f"⚠️  Después del click, volvimos a una URL ya procesada: {url_after_click}. Deteniendo paginación.")
+                            break
                         
                         # Hacer scroll para cargar productos
                         self.logger.info("📜 Haciendo scroll para cargar productos...")
@@ -418,7 +457,10 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                         self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
                         break
                 else:
-                    self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
+                    if next_button:
+                        self.logger.info(f"✅ Botón de siguiente página encontrado pero deshabilitado. Paginación completada. Total de páginas procesadas: {page_number}")
+                    else:
+                        self.logger.info(f"✅ No se encontró botón de siguiente página. Paginación completada. Total de páginas procesadas: {page_number}")
                     break
                     
             except Exception as e:
@@ -476,33 +518,62 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             # Verificar si tiene atributo disabled
             disabled = button.get_attribute('disabled')
             if disabled is not None and disabled != 'false':
+                self.logger.debug("Botón tiene atributo disabled")
                 return False
             
             # Verificar si tiene clase de disabled
             class_name = button.get_attribute('class') or ''
             if 'disabled' in class_name.lower():
+                self.logger.debug(f"Botón tiene clase disabled: {class_name}")
                 return False
             
             # Verificar si el elemento está visible
             if not button.is_displayed():
+                self.logger.debug("Botón no está visible")
                 return False
             
             # Verificar si hay un link <a> dentro y si tiene href
             try:
                 link = button.find_element(By.TAG_NAME, 'a')
                 href = link.get_attribute('href')
-                # Si no tiene href o href es vacío, probablemente está deshabilitado
-                if not href or href.strip() == '':
+                aria_disabled = link.get_attribute('aria-disabled')
+                
+                # Verificar aria-disabled en el link
+                if aria_disabled and aria_disabled.lower() == 'true':
+                    self.logger.debug("Link tiene aria-disabled=true")
                     return False
+                
+                # Si no tiene href o href es vacío, probablemente está deshabilitado
+                if not href or href.strip() == '' or href.strip() == '#' or 'javascript:void' in href.lower():
+                    self.logger.debug(f"Link no tiene href válido: {href}")
+                    return False
+                
+                # Verificar clase del link
+                link_class = link.get_attribute('class') or ''
+                if 'disabled' in link_class.lower():
+                    self.logger.debug(f"Link tiene clase disabled: {link_class}")
+                    return False
+                
+                self.logger.debug(f"✅ Botón habilitado - href: {href}")
+                return True
             except:
                 # Si no hay link, verificar si el botón mismo tiene atributo aria-disabled
                 aria_disabled = button.get_attribute('aria-disabled')
                 if aria_disabled and aria_disabled.lower() == 'true':
+                    self.logger.debug("Botón tiene aria-disabled=true")
                     return False
-                # Si no hay link ni aria-disabled, asumir que está habilitado
-                pass
+                # Si no hay link ni aria-disabled, verificar onclick
+                try:
+                    onclick = button.get_attribute('onclick')
+                    if onclick:
+                        self.logger.debug("Botón tiene onclick, asumiendo habilitado")
+                        return True
+                except:
+                    pass
+                # Si no hay link pero el botón está visible y no tiene disabled, asumir habilitado
+                self.logger.debug("No se encontró link, pero botón parece habilitado")
+                return True
             
-            return True
         except Exception as e:
             self.logger.debug(f"Error verificando si botón está habilitado: {e}")
             return False
