@@ -30,6 +30,8 @@ class JsonPipeline:
             self.filename = 'carnes-y-pescados_products.json'
         elif spider.name == 'destilados':
             self.filename = 'destilados_products.json'
+        elif spider.name == 'snacks-y-picoteo':
+            self.filename = 'snacks-y-picoteo_products.json'
         else:
             self.filename = f'{spider.name}_products.json'
         
@@ -76,6 +78,8 @@ class ExcelPipeline:
             self.filename = 'carnes-y-pescados_products.xlsx'
         elif spider.name == 'destilados':
             self.filename = 'destilados_products.xlsx'
+        elif spider.name == 'snacks-y-picoteo':
+            self.filename = 'snacks-y-picoteo_products.xlsx'
         else:
             self.filename = f'{spider.name}_products.xlsx'
         
