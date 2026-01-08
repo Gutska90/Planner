@@ -221,25 +221,16 @@ class CategoriasSpider(scrapy.Spider):
                     self._init_selenium_driver()
                 
                 if self.driver:
-                    # Cargar página directamente con Selenium
+                    # Cargar página directamente con Selenium y procesar con paginación
                     success = self._load_page_with_selenium(url)
                     if success:
                         try:
-                            # Obtener el HTML de Selenium
-                            page_source = self.driver.page_source
-                            # Crear response con el HTML de Selenium
-                            response = HtmlResponse(
-                                url=url,
-                                body=page_source.encode('utf-8'),
-                                encoding='utf-8'
-                            )
-                            # Procesar productos directamente
-                            self.logger.info("📊 Procesando productos desde HTML de Selenium...")
-                            for item in self.parse_products(response):
+                            # Procesar todas las páginas con paginación
+                            for item in self._process_all_pages_with_pagination():
                                 yield item
                             return
                         except Exception as e:
-                            self.logger.error(f"Error procesando HTML de Selenium: {e}")
+                            self.logger.error(f"Error procesando páginas con Selenium: {e}")
                     else:
                         self.logger.warning("⚠️  No se pudo cargar la página con Selenium")
                 else:
@@ -372,6 +363,151 @@ class CategoriasSpider(scrapy.Spider):
         
         if extracted_count > 0:
             self.logger.info(f"✅ {extracted_count} productos extraídos exitosamente")
+    
+    def _process_all_pages_with_pagination(self):
+        """Procesar todas las páginas con paginación usando Selenium"""
+        page_number = 1
+        
+        while True:
+            try:
+                # Obtener el HTML de Selenium de la página actual
+                page_source = self.driver.page_source
+                current_url = self.driver.current_url
+                
+                # Crear response con el HTML de Selenium
+                response = HtmlResponse(
+                    url=current_url,
+                    body=page_source.encode('utf-8'),
+                    encoding='utf-8'
+                )
+                
+                # Procesar productos de la página actual
+                self.logger.info(f"📊 Procesando productos de la página {page_number}...")
+                page_items = 0
+                for item in self.parse_products(response):
+                    page_items += 1
+                    yield item
+                
+                self.logger.info(f"✅ Página {page_number}: {page_items} productos extraídos")
+                
+                # Buscar botón de siguiente página
+                next_button = self._find_next_page_button()
+                
+                if next_button and self._is_button_enabled(next_button):
+                    # Click en el botón de siguiente página
+                    self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
+                    try:
+                        # Hacer scroll al botón para asegurar que sea visible
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                        time.sleep(1)
+                        
+                        # Intentar hacer click
+                        next_button.click()
+                        time.sleep(3)  # Esperar a que cargue la nueva página
+                        
+                        # Hacer scroll para cargar productos
+                        self.logger.info("📜 Haciendo scroll para cargar productos...")
+                        for i in range(3):
+                            self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
+                            time.sleep(1)
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        time.sleep(3)
+                        self.driver.execute_script("window.scrollTo(0, 0);")
+                        time.sleep(2)
+                        
+                        page_number += 1
+                    except Exception as e:
+                        self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
+                        break
+                else:
+                    self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
+                    break
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Error procesando página {page_number}: {e}")
+                break
+    
+    def _find_next_page_button(self):
+        """Buscar el botón de siguiente página usando el XPath proporcionado"""
+        try:
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            
+            # XPath proporcionado por el usuario para el botón de paginación
+            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[6]'
+            
+            try:
+                # Intentar encontrar el botón con WebDriverWait
+                button = WebDriverWait(self.driver, 5).until(
+                    EC.presence_of_element_located((By.XPATH, xpath))
+                )
+                return button
+            except:
+                # Si no se encuentra con wait, intentar directamente
+                try:
+                    button = self.driver.find_element(By.XPATH, xpath)
+                    return button
+                except:
+                    # Intentar variaciones del XPath
+                    alternative_xpaths = [
+                        '//*[@id="maincontent"]//nav//li[6]',  # Versión más genérica
+                        '//nav//li[6]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
+                        '//nav//li[contains(@class, "next") or contains(@class, "pagination")]//a',  # Por clases
+                    ]
+                    
+                    for alt_xpath in alternative_xpaths:
+                        try:
+                            button = self.driver.find_element(By.XPATH, alt_xpath)
+                            self.logger.debug(f"Botón encontrado con XPath alternativo: {alt_xpath}")
+                            return button
+                        except:
+                            continue
+                    
+                    self.logger.debug("No se encontró botón de siguiente página")
+                    return None
+        except Exception as e:
+            self.logger.debug(f"Error buscando botón de siguiente página: {e}")
+            return None
+    
+    def _is_button_enabled(self, button):
+        """Verificar si el botón está habilitado"""
+        try:
+            from selenium.webdriver.common.by import By
+            
+            # Verificar si tiene atributo disabled
+            disabled = button.get_attribute('disabled')
+            if disabled is not None and disabled != 'false':
+                return False
+            
+            # Verificar si tiene clase de disabled
+            class_name = button.get_attribute('class') or ''
+            if 'disabled' in class_name.lower():
+                return False
+            
+            # Verificar si el elemento está visible
+            if not button.is_displayed():
+                return False
+            
+            # Verificar si hay un link <a> dentro y si tiene href
+            try:
+                link = button.find_element(By.TAG_NAME, 'a')
+                href = link.get_attribute('href')
+                # Si no tiene href o href es vacío, probablemente está deshabilitado
+                if not href or href.strip() == '':
+                    return False
+            except:
+                # Si no hay link, verificar si el botón mismo tiene atributo aria-disabled
+                aria_disabled = button.get_attribute('aria-disabled')
+                if aria_disabled and aria_disabled.lower() == 'true':
+                    return False
+                # Si no hay link ni aria-disabled, asumir que está habilitado
+                pass
+            
+            return True
+        except Exception as e:
+            self.logger.debug(f"Error verificando si botón está habilitado: {e}")
+            return False
 
     def _extract_product_data(self, product_node, category_url: str, index: int) -> Optional[ProductItem]:
         """Extraer datos de un producto individual"""
