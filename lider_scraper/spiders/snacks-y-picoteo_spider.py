@@ -474,32 +474,38 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
             
-            # XPath proporcionado por el usuario para el botón de paginación
-            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[6]'
+            # XPath específico para snacks-y-picoteo proporcionado por el usuario
+            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[7]'
+            
+            self.logger.debug(f"Buscando botón de paginación con XPath: {xpath}")
             
             try:
                 # Intentar encontrar el botón con WebDriverWait
                 button = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.XPATH, xpath))
                 )
+                self.logger.debug("✅ Botón encontrado con XPath principal")
                 return button
             except:
                 # Si no se encuentra con wait, intentar directamente
                 try:
                     button = self.driver.find_element(By.XPATH, xpath)
+                    self.logger.debug("✅ Botón encontrado directamente con XPath principal")
                     return button
                 except:
                     # Intentar variaciones del XPath
                     alternative_xpaths = [
-                        '//*[@id="maincontent"]//nav//li[6]',  # Versión más genérica
-                        '//nav//li[6]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
+                        '//*[@id="maincontent"]//nav//ul//li[7]',  # Versión más genérica
+                        '//*[@id="maincontent"]//nav//li[7]',  # Sin ul
+                        '//nav//ul//li[7]',  # Más genérico
+                        '//nav//li[7]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
                         '//nav//li[contains(@class, "next") or contains(@class, "pagination")]//a',  # Por clases
                     ]
                     
                     for alt_xpath in alternative_xpaths:
                         try:
                             button = self.driver.find_element(By.XPATH, alt_xpath)
-                            self.logger.debug(f"Botón encontrado con XPath alternativo: {alt_xpath}")
+                            self.logger.debug(f"✅ Botón encontrado con XPath alternativo: {alt_xpath}")
                             return button
                         except:
                             continue
