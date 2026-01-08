@@ -109,15 +109,15 @@ class DestiladosSpider(scrapy.Spider):
         },
     }
 
-            def __init__(self, *args, **kwargs):
-                super(DestiladosSpider, self).__init__(*args, **kwargs)
-                self.proxies = []
-                self.current_proxy_index = 0
-                self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
-                self.two_captcha_solver = None
-                self.use_selenium = kwargs.get('use_selenium', 'true').lower() == 'true'
-                self.headless = kwargs.get('headless', 'true').lower() == 'true'  # Por defecto headless
-                self.driver = None
+    def __init__(self, *args, **kwargs):
+        super(DestiladosSpider, self).__init__(*args, **kwargs)
+        self.proxies = []
+        self.current_proxy_index = 0
+        self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
+        self.two_captcha_solver = None
+        self.use_selenium = kwargs.get('use_selenium', 'true').lower() == 'true'
+        self.headless = kwargs.get('headless', 'true').lower() == 'true'  # Por defecto headless
+        self.driver = None
         
         # Inicializar captcha solver si hay API key
         if self.two_captcha_api_key and TWOCAPTCHA_AVAILABLE:
