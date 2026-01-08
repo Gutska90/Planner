@@ -412,55 +412,62 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                 # Buscar botón de siguiente página
                 next_button = self._find_next_page_button()
                 
-                if next_button and self._is_button_enabled(next_button):
-                    # Click en el botón de siguiente página
-                    self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
-                    try:
-                        # Hacer scroll al botón para asegurar que sea visible
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-                        time.sleep(1)
-                        
-                        # Guardar URL antes del click para verificar cambio
-                        url_before_click = self.driver.current_url
-                        
-                        # Intentar hacer click
-                        next_button.click()
-                        time.sleep(3)  # Esperar a que cargue la nueva página
-                        
-                        # Verificar que la URL cambió después del click
-                        url_after_click = self.driver.current_url
-                        if url_after_click == url_before_click:
-                            self.logger.warning("⚠️  La URL no cambió después del click. Esperando más tiempo...")
-                            time.sleep(3)
+                # Verificar si el botón existe y está habilitado
+                if next_button:
+                    is_enabled = self._is_button_enabled(next_button)
+                    self.logger.info(f"🔍 Botón de paginación encontrado. Habilitado: {is_enabled}")
+                    
+                    if is_enabled:
+                        # Botón habilitado: continuar con la paginación
+                        self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
+                        try:
+                            # Hacer scroll al botón para asegurar que sea visible
+                            self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                            time.sleep(1)
+                            
+                            # Guardar URL antes del click para verificar cambio
+                            url_before_click = self.driver.current_url
+                            
+                            # Intentar hacer click
+                            next_button.click()
+                            time.sleep(3)  # Esperar a que cargue la nueva página
+                            
+                            # Verificar que la URL cambió después del click
                             url_after_click = self.driver.current_url
                             if url_after_click == url_before_click:
-                                self.logger.warning("⚠️  La URL aún no cambió después de esperar. El botón puede estar deshabilitado. Deteniendo paginación.")
+                                self.logger.warning("⚠️  La URL no cambió después del click. Esperando más tiempo...")
+                                time.sleep(3)
+                                url_after_click = self.driver.current_url
+                                if url_after_click == url_before_click:
+                                    self.logger.warning("⚠️  La URL aún no cambió después de esperar. El botón puede estar deshabilitado. Deteniendo paginación.")
+                                    break
+                            
+                            # Verificar que no estamos en una URL que ya procesamos
+                            if url_after_click in seen_urls:
+                                self.logger.warning(f"⚠️  Después del click, volvimos a una URL ya procesada: {url_after_click}. Deteniendo paginación.")
                                 break
-                        
-                        # Verificar que no estamos en una URL que ya procesamos
-                        if url_after_click in seen_urls:
-                            self.logger.warning(f"⚠️  Después del click, volvimos a una URL ya procesada: {url_after_click}. Deteniendo paginación.")
+                            
+                            # Hacer scroll para cargar productos
+                            self.logger.info("📜 Haciendo scroll para cargar productos...")
+                            for i in range(3):
+                                self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
+                                time.sleep(1)
+                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                            time.sleep(3)
+                            self.driver.execute_script("window.scrollTo(0, 0);")
+                            time.sleep(2)
+                            
+                            page_number += 1
+                        except Exception as e:
+                            self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
                             break
-                        
-                        # Hacer scroll para cargar productos
-                        self.logger.info("📜 Haciendo scroll para cargar productos...")
-                        for i in range(3):
-                            self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
-                            time.sleep(1)
-                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                        time.sleep(3)
-                        self.driver.execute_script("window.scrollTo(0, 0);")
-                        time.sleep(2)
-                        
-                        page_number += 1
-                    except Exception as e:
-                        self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
+                    else:
+                        # Botón encontrado pero deshabilitado - detener paginación
+                        self.logger.info(f"✅ Botón de siguiente página encontrado pero DESHABILITADO. Paginación completada. Total de páginas procesadas: {page_number}")
                         break
                 else:
-                    if next_button:
-                        self.logger.info(f"✅ Botón de siguiente página encontrado pero deshabilitado. Paginación completada. Total de páginas procesadas: {page_number}")
-                    else:
-                        self.logger.info(f"✅ No se encontró botón de siguiente página. Paginación completada. Total de páginas procesadas: {page_number}")
+                    # No se encontró el botón - detener paginación
+                    self.logger.info(f"✅ No se encontró botón de siguiente página. Paginación completada. Total de páginas procesadas: {page_number}")
                     break
                     
             except Exception as e:
