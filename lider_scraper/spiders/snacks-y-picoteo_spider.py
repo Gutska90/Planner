@@ -365,8 +365,9 @@ class SnacksYPicoteoSpider(scrapy.Spider):
     def _process_all_pages_with_pagination(self):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
+        max_pages = 20  # Límite máximo de páginas para evitar loops infinitos
         
-        while True:
+        while page_number <= max_pages:
             try:
                 # Obtener el HTML de Selenium de la página actual
                 page_source = self.driver.page_source
@@ -419,6 +420,11 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                         break
                 else:
                     self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
+                    break
+                
+                # Verificar límite de páginas después de incrementar
+                if page_number >= max_pages:
+                    self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
                     break
                     
             except Exception as e:
@@ -737,90 +743,29 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             
             # Si la URL tiene /blocked, intentar resolver captcha
             if "/blocked" in current_url:
-                self.logger.info("🔍 Página bloqueada detectada, buscando captcha...")
+                self.logger.info("🔍 Página bloqueada detectada, iniciando resolución de captcha...")
                 
-                # Verificar si hay iframe de captcha
+                # Importar helper de captcha
                 try:
-                    # Buscar iframe por múltiples métodos
-                    iframe = None
-                    try:
-                        # Método 1: Buscar contenedor y luego iframe
-                        container = self.driver.find_element(By.ID, 'px-captcha')
-                        iframe = container.find_element(By.TAG_NAME, 'iframe')
-                        self.logger.info("✅ Iframe encontrado por contenedor")
-                    except:
-                        try:
-                            # Método 2: Buscar todos los iframes
-                            iframes = self.driver.find_elements(By.TAG_NAME, 'iframe')
-                            for ifr in iframes:
-                                try:
-                                    parent = ifr.find_element(By.XPATH, './..')
-                                    if parent.get_attribute('id') == 'px-captcha':
-                                        iframe = ifr
-                                        self.logger.info("✅ Iframe encontrado por parent")
-                                        break
-                                except:
-                                    continue
-                        except:
-                            pass
+                    from lider_scraper.spiders._captcha_helper import solve_px_captcha
+                    captcha_solved = solve_px_captcha(self.driver, self.logger, url, hold_time=12)
                     
-                    if iframe:
-                        self.logger.info("✅ Iframe de captcha encontrado, intentando resolver...")
-                        # Cambiar al iframe usando índice
-                        self.driver.switch_to.default_content()
-                        iframes_all = self.driver.find_elements(By.TAG_NAME, 'iframe')
-                        iframe_index = None
-                        for idx, ifr in enumerate(iframes_all):
-                            try:
-                                parent = ifr.find_element(By.XPATH, './..')
-                                if parent.get_attribute('id') == 'px-captcha':
-                                    iframe_index = idx
-                                    break
-                            except:
-                                continue
-                        
-                        if iframe_index is not None:
-                            self.driver.switch_to.frame(iframe_index)
-                            self.logger.info(f"✅ Cambiado al iframe (índice {iframe_index})")
-                            time.sleep(2)
-                            
-                            # Buscar botón dentro del iframe
-                            try:
-                                button = WebDriverWait(self.driver, 10).until(
-                                    EC.presence_of_element_located((By.TAG_NAME, "button"))
-                                )
-                                if button:
-                                    self.logger.info("🖱️  Botón encontrado, haciendo click y mantener por 12 segundos...")
-                                    # Hacer click y mantener
-                                    actions = ActionChains(self.driver)
-                                    actions.click_and_hold(button).perform()
-                                    for i in range(12):
-                                        time.sleep(1)
-                                        if i % 3 == 0:
-                                            self.logger.info(f"   ⏳ Manteniendo click... {12-i} segundos restantes")
-                                    actions.release(button).perform()
-                                    self.driver.switch_to.default_content()
-                                    self.logger.info("✅ Click liberado, esperando validación...")
-                                    time.sleep(5)
-                                    
-                                    # Recargar la URL original después de resolver captcha
-                                    self.driver.get(url)
-                                    time.sleep(5)
-                                    
-                                    # Verificar si se resolvió
-                                    current_url = self.driver.current_url
-                                    self.logger.info(f"📍 URL después de captcha: {current_url}")
-                                    if "/blocked" not in current_url:
-                                        self.logger.info("✅✅ Captcha resuelto exitosamente!")
-                                    else:
-                                        self.logger.warning("⚠️  Captcha no resuelto completamente")
-                            except Exception as e:
-                                self.logger.debug(f"Error interactuando con botón: {e}")
-                                self.driver.switch_to.default_content()
+                    if captcha_solved:
+                        # Verificar URL después de resolver
+                        current_url_after = self.driver.current_url
+                        if "/blocked" not in current_url_after:
+                            self.logger.info("✅✅✅ Captcha resuelto exitosamente!")
+                        else:
+                            self.logger.warning("⚠️  Captcha puede requerir más tiempo o interacción manual")
                     else:
-                        self.logger.info("ℹ️  No se encontró iframe de captcha")
+                        self.logger.warning("⚠️  No se pudo resolver el captcha automáticamente")
+                except ImportError:
+                    self.logger.error("❌ No se pudo importar helper de captcha, usando método básico...")
+                    pass
                 except Exception as e:
-                    self.logger.debug(f"Error buscando captcha: {e}")
+                    self.logger.error(f"❌ Error resolviendo captcha: {e}")
+                    import traceback
+                    self.logger.debug(traceback.format_exc())
             else:
                 self.logger.info("✅ Página accesible sin bloqueo")
             
