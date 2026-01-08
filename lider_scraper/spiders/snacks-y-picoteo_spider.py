@@ -429,41 +429,41 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                             self.driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", next_button)
                             time.sleep(2)
                             
-                        # Intentar hacer click - primero intentar con JavaScript si es necesario
-                        try:
-                            # Verificar ventana antes del click
+                            # Intentar hacer click - primero intentar con JavaScript si es necesario
                             try:
-                                _ = self.driver.current_url
-                            except:
-                                raise Exception("Ventana cerrada antes del click")
+                                # Verificar ventana antes del click
+                                try:
+                                    _ = self.driver.current_url
+                                except:
+                                    raise Exception("Ventana cerrada antes del click")
+                                
+                                # Intentar click directo
+                                next_button.click()
+                            except Exception as click_error:
+                                # Si falla, intentar con JavaScript
+                                self.logger.debug(f"Click directo falló ({click_error}), intentando con JavaScript...")
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", next_button)
+                                except Exception as js_error:
+                                    self.logger.error(f"❌ Click con JavaScript también falló: {js_error}")
+                                    raise
                             
-                            # Intentar click directo
-                            next_button.click()
-                        except Exception as click_error:
-                            # Si falla, intentar con JavaScript
-                            self.logger.debug(f"Click directo falló ({click_error}), intentando con JavaScript...")
+                            time.sleep(4)  # Esperar a que cargue la nueva página
+                            
+                            # Verificar que la ventana sigue abierta
                             try:
-                                self.driver.execute_script("arguments[0].click();", next_button)
-                            except Exception as js_error:
-                                self.logger.error(f"❌ Click con JavaScript también falló: {js_error}")
-                                raise
-                        
-                        time.sleep(4)  # Esperar a que cargue la nueva página
-                        
-                        # Verificar que la ventana sigue abierta
-                        try:
-                            new_url = self.driver.current_url
-                            if new_url != current_url:
-                                self.logger.info(f"✅ Página cambió: {new_url}")
-                            else:
-                                self.logger.warning("⚠️  La URL no cambió después del click, esperando más tiempo...")
-                                time.sleep(3)
                                 new_url = self.driver.current_url
-                                if new_url == current_url:
-                                    self.logger.warning("⚠️  La URL aún no cambió, puede haber un problema con la paginación")
-                        except Exception as url_error:
-                            self.logger.error(f"❌ Error verificando URL después del click: {url_error}")
-                            raise
+                                if new_url != current_url:
+                                    self.logger.info(f"✅ Página cambió: {new_url}")
+                                else:
+                                    self.logger.warning("⚠️  La URL no cambió después del click, esperando más tiempo...")
+                                    time.sleep(3)
+                                    new_url = self.driver.current_url
+                                    if new_url == current_url:
+                                        self.logger.warning("⚠️  La URL aún no cambió, puede haber un problema con la paginación")
+                            except Exception as url_error:
+                                self.logger.error(f"❌ Error verificando URL después del click: {url_error}")
+                                raise
                             
                             # Hacer scroll para cargar productos
                             self.logger.info("📜 Haciendo scroll para cargar productos...")
