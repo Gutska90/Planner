@@ -56,9 +56,17 @@ class JsonPipeline:
                     unique_items.append(item)
                 elif product_url:
                     duplicates_count += 1
+                else:
+                    # Si no tiene URL, también agregarlo pero basándose en nombre
+                    name = item.get('name', '')
+                    if name and name not in seen_urls:
+                        seen_urls.add(name)
+                        unique_items.append(item)
+                    else:
+                        duplicates_count += 1
             
             if duplicates_count > 0:
-                spider.logger.info(f'🔄 Eliminados {duplicates_count} registros duplicados')
+                spider.logger.info(f'🔄 Eliminados {duplicates_count} productos duplicados')
             
             output_file = os.path.join(os.getcwd(), self.filename)
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -140,22 +148,32 @@ class ExcelPipeline:
                     unique_items.append(item)
                 elif product_url:
                     duplicates_count += 1
+                else:
+                    # Si no tiene URL, también agregarlo pero basándose en nombre
+                    name = item.get('name', '')
+                    if name and name not in seen_urls:
+                        seen_urls.add(name)
+                        unique_items.append(item)
+                    else:
+                        duplicates_count += 1
             
-            # Reconstruir el workbook con solo items únicos
+            # Reconstruir el Excel con items únicos
+            self.ws.delete_rows(2, self.ws.max_row)  # Eliminar todas las filas excepto el header
+            
+            for idx, item in enumerate(unique_items, start=2):
+                self.ws.cell(row=idx, column=1, value=item.get('category_url', ''))
+                self.ws.cell(row=idx, column=2, value=item.get('name', ''))
+                self.ws.cell(row=idx, column=3, value=item.get('price', ''))
+                self.ws.cell(row=idx, column=4, value=item.get('discount_price', ''))
+                
+                # URL como hipervínculo
+                url_cell = self.ws.cell(row=idx, column=5, value=item.get('product_url', ''))
+                if item.get('product_url'):
+                    url_cell.hyperlink = item.get('product_url')
+                    url_cell.font = Font(underline="single", color="0563C1")
+            
             if duplicates_count > 0:
-                spider.logger.info(f'🔄 Eliminados {duplicates_count} registros duplicados del Excel')
-                # Limpiar la hoja y volver a crear
-                self.ws.delete_rows(2, self.ws.max_row)  # Eliminar todas las filas excepto el header
-                # Agregar items únicos
-                for idx, item in enumerate(unique_items, start=2):
-                    self.ws.cell(row=idx, column=1, value=item.get('category_url', ''))
-                    self.ws.cell(row=idx, column=2, value=item.get('name', ''))
-                    self.ws.cell(row=idx, column=3, value=item.get('price', ''))
-                    self.ws.cell(row=idx, column=4, value=item.get('discount_price', ''))
-                    url_cell = self.ws.cell(row=idx, column=5, value=item.get('product_url', ''))
-                    if item.get('product_url'):
-                        url_cell.hyperlink = item.get('product_url')
-                        url_cell.font = Font(underline="single", color="0563C1")
+                spider.logger.info(f'🔄 Eliminados {duplicates_count} productos duplicados del Excel')
             
             output_file = os.path.join(os.getcwd(), self.filename)
             self.wb.save(output_file)

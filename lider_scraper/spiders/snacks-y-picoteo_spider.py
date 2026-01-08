@@ -116,7 +116,6 @@ class SnacksYPicoteoSpider(scrapy.Spider):
         self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
         self.two_captcha_solver = None
         self.use_selenium = kwargs.get('use_selenium', 'true').lower() == 'true'
-        self.headless = kwargs.get('headless', 'true').lower() == 'true'  # Por defecto headless
         self.driver = None
         
         # Inicializar captcha solver si hay API key
@@ -367,8 +366,7 @@ class SnacksYPicoteoSpider(scrapy.Spider):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
         max_pages = 20  # Límite máximo de páginas para evitar loops infinitos
-        seen_urls = set()  # Para detectar si estamos en la misma página
-        consecutive_same_url = 0  # Contador para detectar URLs repetidas consecutivas
+        seen_urls = set()  # Para detectar si estamos en la misma página (loop infinito)
         
         while page_number <= max_pages:
             try:
@@ -376,18 +374,12 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                 page_source = self.driver.page_source
                 current_url = self.driver.current_url
                 
-                # Verificar si ya procesamos esta URL (evitar loops infinitos)
+                # Detectar loop infinito: si ya procesamos esta URL, detener
                 if current_url in seen_urls:
-                    consecutive_same_url += 1
-                    if consecutive_same_url >= 2:
-                        self.logger.warning(f"⚠️  URL repetida detectada {consecutive_same_url} veces: {current_url}. Deteniendo paginación para evitar loop infinito.")
-                        break
-                    else:
-                        self.logger.warning(f"⚠️  URL repetida detectada. Esperando antes de continuar...")
-                        time.sleep(3)
-                else:
-                    consecutive_same_url = 0  # Resetear contador si la URL es nueva
-                    seen_urls.add(current_url)
+                    self.logger.warning(f"⚠️  URL duplicada detectada: {current_url}. Posible loop infinito. Deteniendo paginación.")
+                    break
+                
+                seen_urls.add(current_url)
                 
                 # Crear response con el HTML de Selenium
                 response = HtmlResponse(
@@ -405,70 +397,56 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                 
                 self.logger.info(f"✅ Página {page_number}: {page_items} productos extraídos")
                 
-                # Verificar límite de páginas
-                if page_number >= max_pages:
-                    self.logger.info(f"✅ Límite de {max_pages} páginas alcanzado. Total de páginas procesadas: {page_number}")
-                    break
-                
                 # Buscar botón de siguiente página
                 next_button = self._find_next_page_button()
                 
-                # Verificar si el botón existe y está habilitado
-                if next_button:
-                    is_enabled = self._is_button_enabled(next_button)
-                    self.logger.info(f"🔍 Botón de paginación encontrado. Habilitado: {is_enabled}")
+                if next_button and self._is_button_enabled(next_button):
+                    # Verificar límite de páginas
+                    if page_number >= max_pages:
+                        self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
+                        break
                     
-                    if is_enabled:
-                        # Botón habilitado: continuar con la paginación
-                        self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
-                        try:
-                            # Hacer scroll al botón para asegurar que sea visible
-                            self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
-                            time.sleep(1)
-                            
-                            # Guardar URL antes del click para verificar cambio
-                            url_before_click = self.driver.current_url
-                            
-                            # Intentar hacer click
-                            next_button.click()
-                            time.sleep(3)  # Esperar a que cargue la nueva página
-                            
-                            # Verificar que la URL cambió después del click
-                            url_after_click = self.driver.current_url
-                            if url_after_click == url_before_click:
-                                self.logger.warning("⚠️  La URL no cambió después del click. Esperando más tiempo...")
-                                time.sleep(3)
-                                url_after_click = self.driver.current_url
-                                if url_after_click == url_before_click:
-                                    self.logger.warning("⚠️  La URL aún no cambió después de esperar. El botón puede estar deshabilitado. Deteniendo paginación.")
-                                    break
-                            
-                            # Verificar que no estamos en una URL que ya procesamos
-                            if url_after_click in seen_urls:
-                                self.logger.warning(f"⚠️  Después del click, volvimos a una URL ya procesada: {url_after_click}. Deteniendo paginación.")
-                                break
-                            
-                            # Hacer scroll para cargar productos
-                            self.logger.info("📜 Haciendo scroll para cargar productos...")
-                            for i in range(3):
-                                self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
-                                time.sleep(1)
-                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                            time.sleep(3)
-                            self.driver.execute_script("window.scrollTo(0, 0);")
-                            time.sleep(2)
-                            
-                            page_number += 1
-                        except Exception as e:
-                            self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
+                    # Click en el botón de siguiente página
+                    self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
+                    try:
+                        # Guardar URL actual antes del click para detectar loops
+                        previous_url = current_url
+                        
+                        # Hacer scroll al botón para asegurar que sea visible
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                        time.sleep(1)
+                        
+                        # Intentar hacer click
+                        next_button.click()
+                        time.sleep(3)  # Esperar a que cargue la nueva página
+                        
+                        # Verificar que la URL cambió (evita loops infinitos)
+                        new_url = self.driver.current_url
+                        if new_url == previous_url:
+                            self.logger.warning(f"⚠️  La URL no cambió después del click. Posible loop infinito detectado.")
                             break
-                    else:
-                        # Botón encontrado pero deshabilitado - detener paginación
-                        self.logger.info(f"✅ Botón de siguiente página encontrado pero DESHABILITADO. Paginación completada. Total de páginas procesadas: {page_number}")
+                        
+                        # Verificar que no estamos volviendo a una URL ya procesada
+                        if new_url in seen_urls:
+                            self.logger.warning(f"⚠️  URL ya procesada detectada: {new_url}. Posible loop infinito. Deteniendo paginación.")
+                            break
+                        
+                        # Hacer scroll para cargar productos
+                        self.logger.info("📜 Haciendo scroll para cargar productos...")
+                        for i in range(3):
+                            self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
+                            time.sleep(1)
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        time.sleep(3)
+                        self.driver.execute_script("window.scrollTo(0, 0);")
+                        time.sleep(2)
+                        
+                        page_number += 1
+                    except Exception as e:
+                        self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
                         break
                 else:
-                    # No se encontró el botón - detener paginación
-                    self.logger.info(f"✅ No se encontró botón de siguiente página. Paginación completada. Total de páginas procesadas: {page_number}")
+                    self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
                     break
                     
             except Exception as e:
@@ -482,38 +460,32 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
             
-            # XPath específico para snacks-y-picoteo proporcionado por el usuario
-            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[7]'
-            
-            self.logger.debug(f"Buscando botón de paginación con XPath: {xpath}")
+            # XPath proporcionado por el usuario para el botón de paginación
+            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[6]'
             
             try:
                 # Intentar encontrar el botón con WebDriverWait
                 button = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.XPATH, xpath))
                 )
-                self.logger.debug("✅ Botón encontrado con XPath principal")
                 return button
             except:
                 # Si no se encuentra con wait, intentar directamente
                 try:
                     button = self.driver.find_element(By.XPATH, xpath)
-                    self.logger.debug("✅ Botón encontrado directamente con XPath principal")
                     return button
                 except:
                     # Intentar variaciones del XPath
                     alternative_xpaths = [
-                        '//*[@id="maincontent"]//nav//ul//li[7]',  # Versión más genérica
-                        '//*[@id="maincontent"]//nav//li[7]',  # Sin ul
-                        '//nav//ul//li[7]',  # Más genérico
-                        '//nav//li[7]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
+                        '//*[@id="maincontent"]//nav//li[6]',  # Versión más genérica
+                        '//nav//li[6]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
                         '//nav//li[contains(@class, "next") or contains(@class, "pagination")]//a',  # Por clases
                     ]
                     
                     for alt_xpath in alternative_xpaths:
                         try:
                             button = self.driver.find_element(By.XPATH, alt_xpath)
-                            self.logger.debug(f"✅ Botón encontrado con XPath alternativo: {alt_xpath}")
+                            self.logger.debug(f"Botón encontrado con XPath alternativo: {alt_xpath}")
                             return button
                         except:
                             continue
@@ -532,62 +504,33 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             # Verificar si tiene atributo disabled
             disabled = button.get_attribute('disabled')
             if disabled is not None and disabled != 'false':
-                self.logger.debug("Botón tiene atributo disabled")
                 return False
             
             # Verificar si tiene clase de disabled
             class_name = button.get_attribute('class') or ''
             if 'disabled' in class_name.lower():
-                self.logger.debug(f"Botón tiene clase disabled: {class_name}")
                 return False
             
             # Verificar si el elemento está visible
             if not button.is_displayed():
-                self.logger.debug("Botón no está visible")
                 return False
             
             # Verificar si hay un link <a> dentro y si tiene href
             try:
                 link = button.find_element(By.TAG_NAME, 'a')
                 href = link.get_attribute('href')
-                aria_disabled = link.get_attribute('aria-disabled')
-                
-                # Verificar aria-disabled en el link
-                if aria_disabled and aria_disabled.lower() == 'true':
-                    self.logger.debug("Link tiene aria-disabled=true")
-                    return False
-                
                 # Si no tiene href o href es vacío, probablemente está deshabilitado
-                if not href or href.strip() == '' or href.strip() == '#' or 'javascript:void' in href.lower():
-                    self.logger.debug(f"Link no tiene href válido: {href}")
+                if not href or href.strip() == '':
                     return False
-                
-                # Verificar clase del link
-                link_class = link.get_attribute('class') or ''
-                if 'disabled' in link_class.lower():
-                    self.logger.debug(f"Link tiene clase disabled: {link_class}")
-                    return False
-                
-                self.logger.debug(f"✅ Botón habilitado - href: {href}")
-                return True
             except:
                 # Si no hay link, verificar si el botón mismo tiene atributo aria-disabled
                 aria_disabled = button.get_attribute('aria-disabled')
                 if aria_disabled and aria_disabled.lower() == 'true':
-                    self.logger.debug("Botón tiene aria-disabled=true")
                     return False
-                # Si no hay link ni aria-disabled, verificar onclick
-                try:
-                    onclick = button.get_attribute('onclick')
-                    if onclick:
-                        self.logger.debug("Botón tiene onclick, asumiendo habilitado")
-                        return True
-                except:
-                    pass
-                # Si no hay link pero el botón está visible y no tiene disabled, asumir habilitado
-                self.logger.debug("No se encontró link, pero botón parece habilitado")
-                return True
+                # Si no hay link ni aria-disabled, asumir que está habilitado
+                pass
             
+            return True
         except Exception as e:
             self.logger.debug(f"Error verificando si botón está habilitado: {e}")
             return False
@@ -758,27 +701,13 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-blink-features=AutomationControlled')
-            
-            # Agregar modo headless si está habilitado
-            if self.headless:
-                options.add_argument('--headless=new')
-                options.add_argument('--disable-gpu')
-                self.logger.info("🔇 Modo headless activado (navegador no visible)")
-            else:
-                self.logger.info("👁️  Modo visible activado (navegador visible)")
-            
+            # No usar headless para evitar detección
             # Intentar inicialización simple primero
             try:
                 self.driver = uc.Chrome(options=options, version_main=None)
             except:
                 # Fallback: sin opciones adicionales
-                if self.headless:
-                    fallback_options = uc.ChromeOptions()
-                    fallback_options.add_argument('--headless=new')
-                    fallback_options.add_argument('--disable-gpu')
-                    self.driver = uc.Chrome(options=fallback_options, version_main=None)
-                else:
-                    self.driver = uc.Chrome(version_main=None)
+                self.driver = uc.Chrome(version_main=None)
             
             self.driver.set_page_load_timeout(60)
             self.driver.implicitly_wait(10)

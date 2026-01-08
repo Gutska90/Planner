@@ -117,7 +117,6 @@ class CarnesYPescadosSpider(scrapy.Spider):
         self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
         self.two_captcha_solver = None
         self.use_selenium = kwargs.get('use_selenium', 'true').lower() == 'true'
-        self.headless = kwargs.get('headless', 'true').lower() == 'true'  # Por defecto headless
         self.driver = None
         
         # Inicializar captcha solver si hay API key
@@ -369,19 +368,12 @@ class CarnesYPescadosSpider(scrapy.Spider):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
         max_pages = 20  # Límite máximo de páginas para evitar loops infinitos
-        seen_urls = set()  # Para detectar si estamos en la misma página
         
         while page_number <= max_pages:
             try:
                 # Obtener el HTML de Selenium de la página actual
                 page_source = self.driver.page_source
                 current_url = self.driver.current_url
-                
-                # Verificar si ya procesamos esta URL (evitar loops infinitos)
-                if current_url in seen_urls:
-                    self.logger.warning(f"⚠️  URL repetida detectada: {current_url}. Deteniendo paginación para evitar loop infinito.")
-                    break
-                seen_urls.add(current_url)
                 
                 # Crear response con el HTML de Selenium
                 response = HtmlResponse(
@@ -399,18 +391,21 @@ class CarnesYPescadosSpider(scrapy.Spider):
                 
                 self.logger.info(f"✅ Página {page_number}: {page_items} productos extraídos")
                 
-                # Verificar límite de páginas
-                if page_number >= max_pages:
-                    self.logger.info(f"✅ Límite de {max_pages} páginas alcanzado. Total de páginas procesadas: {page_number}")
-                    break
-                
                 # Buscar botón de siguiente página
                 next_button = self._find_next_page_button()
                 
                 if next_button and self._is_button_enabled(next_button):
+                    # Verificar límite de páginas
+                    if page_number >= max_pages:
+                        self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
+                        break
+                    
                     # Click en el botón de siguiente página
                     self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
                     try:
+                        # Guardar URL actual antes del click para detectar loops
+                        previous_url = current_url
+                        
                         # Hacer scroll al botón para asegurar que sea visible
                         self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
                         time.sleep(1)
@@ -419,16 +414,11 @@ class CarnesYPescadosSpider(scrapy.Spider):
                         next_button.click()
                         time.sleep(3)  # Esperar a que cargue la nueva página
                         
-                        # Verificar que la URL cambió después del click
+                        # Verificar que la URL cambió (evita loops infinitos)
                         new_url = self.driver.current_url
-                        if new_url == current_url:
-                            self.logger.warning("⚠️  La URL no cambió después del click. Puede haber un problema con la paginación.")
-                            # Esperar un poco más
-                            time.sleep(2)
-                            new_url = self.driver.current_url
-                            if new_url == current_url:
-                                self.logger.warning("⚠️  La URL aún no cambió. Deteniendo paginación.")
-                                break
+                        if new_url == previous_url:
+                            self.logger.warning(f"⚠️  La URL no cambió después del click. Posible loop infinito detectado.")
+                            break
                         
                         # Hacer scroll para cargar productos
                         self.logger.info("📜 Haciendo scroll para cargar productos...")
@@ -700,27 +690,13 @@ class CarnesYPescadosSpider(scrapy.Spider):
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--disable-blink-features=AutomationControlled')
-            
-            # Agregar modo headless si está habilitado
-            if self.headless:
-                options.add_argument('--headless=new')
-                options.add_argument('--disable-gpu')
-                self.logger.info("🔇 Modo headless activado (navegador no visible)")
-            else:
-                self.logger.info("👁️  Modo visible activado (navegador visible)")
-            
+            # No usar headless para evitar detección
             # Intentar inicialización simple primero
             try:
                 self.driver = uc.Chrome(options=options, version_main=None)
             except:
                 # Fallback: sin opciones adicionales
-                if self.headless:
-                    fallback_options = uc.ChromeOptions()
-                    fallback_options.add_argument('--headless=new')
-                    fallback_options.add_argument('--disable-gpu')
-                    self.driver = uc.Chrome(options=fallback_options, version_main=None)
-                else:
-                    self.driver = uc.Chrome(version_main=None)
+                self.driver = uc.Chrome(version_main=None)
             
             self.driver.set_page_load_timeout(60)
             self.driver.implicitly_wait(10)
