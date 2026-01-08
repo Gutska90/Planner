@@ -365,21 +365,12 @@ class SnacksYPicoteoSpider(scrapy.Spider):
     def _process_all_pages_with_pagination(self):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
-        max_pages = 20  # Límite máximo de páginas para evitar loops infinitos
-        seen_urls = set()  # Para detectar si estamos en la misma página (loop infinito)
         
-        while page_number <= max_pages:
+        while True:
             try:
                 # Obtener el HTML de Selenium de la página actual
                 page_source = self.driver.page_source
                 current_url = self.driver.current_url
-                
-                # Detectar loop infinito: si ya procesamos esta URL, detener
-                if current_url in seen_urls:
-                    self.logger.warning(f"⚠️  URL duplicada detectada: {current_url}. Posible loop infinito. Deteniendo paginación.")
-                    break
-                
-                seen_urls.add(current_url)
                 
                 # Crear response con el HTML de Selenium
                 response = HtmlResponse(
@@ -401,17 +392,9 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                 next_button = self._find_next_page_button()
                 
                 if next_button and self._is_button_enabled(next_button):
-                    # Verificar límite de páginas
-                    if page_number >= max_pages:
-                        self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
-                        break
-                    
                     # Click en el botón de siguiente página
                     self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
                     try:
-                        # Guardar URL actual antes del click para detectar loops
-                        previous_url = current_url
-                        
                         # Hacer scroll al botón para asegurar que sea visible
                         self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
                         time.sleep(1)
@@ -419,17 +402,6 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                         # Intentar hacer click
                         next_button.click()
                         time.sleep(3)  # Esperar a que cargue la nueva página
-                        
-                        # Verificar que la URL cambió (evita loops infinitos)
-                        new_url = self.driver.current_url
-                        if new_url == previous_url:
-                            self.logger.warning(f"⚠️  La URL no cambió después del click. Posible loop infinito detectado.")
-                            break
-                        
-                        # Verificar que no estamos volviendo a una URL ya procesada
-                        if new_url in seen_urls:
-                            self.logger.warning(f"⚠️  URL ya procesada detectada: {new_url}. Posible loop infinito. Deteniendo paginación.")
-                            break
                         
                         # Hacer scroll para cargar productos
                         self.logger.info("📜 Haciendo scroll para cargar productos...")
@@ -460,37 +432,41 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             from selenium.webdriver.support.ui import WebDriverWait
             from selenium.webdriver.support import expected_conditions as EC
             
-            # XPath proporcionado por el usuario para el botón de paginación
-            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[6]'
+            # XPath específico para snacks-y-picoteo para evitar loop infinito
+            xpath = '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[7]/a'
             
             try:
                 # Intentar encontrar el botón con WebDriverWait
                 button = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.XPATH, xpath))
                 )
+                self.logger.debug("✅ Botón encontrado con XPath principal (li[7]/a)")
                 return button
             except:
                 # Si no se encuentra con wait, intentar directamente
                 try:
                     button = self.driver.find_element(By.XPATH, xpath)
+                    self.logger.debug("✅ Botón encontrado directamente con XPath principal")
                     return button
                 except:
                     # Intentar variaciones del XPath
                     alternative_xpaths = [
-                        '//*[@id="maincontent"]//nav//li[6]',  # Versión más genérica
-                        '//nav//li[6]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
-                        '//nav//li[contains(@class, "next") or contains(@class, "pagination")]//a',  # Por clases
+                        '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[7]',  # Sin /a al final
+                        '//*[@id="maincontent"]//nav//ul//li[7]//a',  # Versión más genérica
+                        '//nav//ul//li[7]//a[contains(@aria-label, "Next") or contains(@aria-label, "Siguiente")]',  # Por aria-label
+                        '//nav//li[7]//a',  # Más genérico aún
+                        '//*[@id="maincontent"]/main/div/div/div/div/div[5]/nav/ul/li[6]',  # Fallback al li[6]
                     ]
                     
                     for alt_xpath in alternative_xpaths:
                         try:
                             button = self.driver.find_element(By.XPATH, alt_xpath)
-                            self.logger.debug(f"Botón encontrado con XPath alternativo: {alt_xpath}")
+                            self.logger.debug(f"✅ Botón encontrado con XPath alternativo: {alt_xpath}")
                             return button
                         except:
                             continue
                     
-                    self.logger.debug("No se encontró botón de siguiente página")
+                    self.logger.debug("⚠️  No se encontró botón de siguiente página")
                     return None
         except Exception as e:
             self.logger.debug(f"Error buscando botón de siguiente página: {e}")

@@ -395,17 +395,9 @@ class CarnesYPescadosSpider(scrapy.Spider):
                 next_button = self._find_next_page_button()
                 
                 if next_button and self._is_button_enabled(next_button):
-                    # Verificar límite de páginas
-                    if page_number >= max_pages:
-                        self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
-                        break
-                    
                     # Click en el botón de siguiente página
                     self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
                     try:
-                        # Guardar URL actual antes del click para detectar loops
-                        previous_url = current_url
-                        
                         # Hacer scroll al botón para asegurar que sea visible
                         self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
                         time.sleep(1)
@@ -413,12 +405,6 @@ class CarnesYPescadosSpider(scrapy.Spider):
                         # Intentar hacer click
                         next_button.click()
                         time.sleep(3)  # Esperar a que cargue la nueva página
-                        
-                        # Verificar que la URL cambió (evita loops infinitos)
-                        new_url = self.driver.current_url
-                        if new_url == previous_url:
-                            self.logger.warning(f"⚠️  La URL no cambió después del click. Posible loop infinito detectado.")
-                            break
                         
                         # Hacer scroll para cargar productos
                         self.logger.info("📜 Haciendo scroll para cargar productos...")
@@ -437,6 +423,11 @@ class CarnesYPescadosSpider(scrapy.Spider):
                 else:
                     self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
                     break
+            
+            # Verificar límite de páginas
+            if page_number >= max_pages:
+                self.logger.info(f"⚠️  Límite de {max_pages} páginas alcanzado. Deteniendo paginación.")
+                break
                     
             except Exception as e:
                 self.logger.error(f"❌ Error procesando página {page_number}: {e}")
