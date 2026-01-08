@@ -26,8 +26,8 @@ class JsonPipeline:
     def open_spider(self, spider):
         """Abrir spider"""
         # Determinar nombre del archivo basado en el nombre del spider
-        if spider.name == 'categoria':
-            self.filename = 'lider_products.json'
+        if spider.name == 'carnes-y-pescados':
+            self.filename = 'carnes-y-pescados_products.json'
         elif spider.name == 'destilados':
             self.filename = 'destilados_products.json'
         else:
@@ -72,8 +72,8 @@ class ExcelPipeline:
             return
         
         # Determinar nombre del archivo basado en el nombre del spider
-        if spider.name == 'categoria':
-            self.filename = 'lider_products.xlsx'
+        if spider.name == 'carnes-y-pescados':
+            self.filename = 'carnes-y-pescados_products.xlsx'
         elif spider.name == 'destilados':
             self.filename = 'destilados_products.xlsx'
         else:

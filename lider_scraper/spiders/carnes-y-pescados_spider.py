@@ -1,5 +1,5 @@
 """
-Spider optimizado para extraer productos de categorías de Lider.cl
+Spider optimizado para extraer productos de carnes y pescados de Lider.cl
 Incluye soporte para captcha solver y proxies rotativos
 """
 import re
@@ -51,8 +51,8 @@ def _clean_text(text: str | None) -> str | None:
     return t or None
 
 
-class CategoriasSpider(scrapy.Spider):
-    name = "categoria"
+class CarnesYPescadosSpider(scrapy.Spider):
+    name = "carnes-y-pescados"
     allowed_domains = ["super.lider.cl"]
     
     # XPath optimizado para capturar TODOS los productos
@@ -111,7 +111,7 @@ class CategoriasSpider(scrapy.Spider):
     }
 
     def __init__(self, *args, **kwargs):
-        super(CategoriasSpider, self).__init__(*args, **kwargs)
+        super(CarnesYPescadosSpider, self).__init__(*args, **kwargs)
         self.proxies = []
         self.current_proxy_index = 0
         self.two_captcha_api_key = kwargs.get('twocaptcha_key', '')
