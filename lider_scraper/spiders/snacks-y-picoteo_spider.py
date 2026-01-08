@@ -365,38 +365,12 @@ class SnacksYPicoteoSpider(scrapy.Spider):
     def _process_all_pages_with_pagination(self):
         """Procesar todas las páginas con paginación usando Selenium"""
         page_number = 1
-        max_pages = 50  # Límite de seguridad para evitar loops infinitos
         
-        while page_number <= max_pages:
+        while True:
             try:
-                # Verificar que la ventana esté abierta antes de continuar
-                try:
-                    from selenium.common.exceptions import NoSuchWindowException
-                    _ = self.driver.current_url
-                except (NoSuchWindowException, Exception) as e:
-                    self.logger.error(f"❌ Ventana cerrada en página {page_number}: {e}")
-                    self.logger.info("🔄 Intentando reinicializar driver...")
-                    self.driver = None
-                    if not self._init_selenium_driver():
-                        self.logger.error("❌ No se pudo reinicializar el driver")
-                        break
-                    # Recargar la URL actual si es posible
-                    try:
-                        current_url = getattr(self, '_last_url', None)
-                        if current_url:
-                            self.driver.get(current_url)
-                            time.sleep(5)
-                    except:
-                        pass
-                
                 # Obtener el HTML de Selenium de la página actual
-                try:
-                    page_source = self.driver.page_source
-                    current_url = self.driver.current_url
-                    self._last_url = current_url  # Guardar URL para recuperación
-                except Exception as e:
-                    self.logger.error(f"❌ Error obteniendo page_source: {e}")
-                    break
+                page_source = self.driver.page_source
+                current_url = self.driver.current_url
                 
                 # Crear response con el HTML de Selenium
                 response = HtmlResponse(
@@ -417,103 +391,38 @@ class SnacksYPicoteoSpider(scrapy.Spider):
                 # Buscar botón de siguiente página
                 next_button = self._find_next_page_button()
                 
-                if next_button:
-                    is_enabled = self._is_button_enabled(next_button)
-                    self.logger.info(f"🔍 Botón encontrado. Habilitado: {is_enabled}")
-                    
-                    if is_enabled:
-                        # Click en el botón de siguiente página
-                        self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
-                        try:
-                            # Hacer scroll al botón para asegurar que sea visible
-                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", next_button)
-                            time.sleep(2)
-                            
-                            # Intentar hacer click - primero intentar con JavaScript si es necesario
-                            try:
-                                # Verificar ventana antes del click
-                                try:
-                                    _ = self.driver.current_url
-                                except:
-                                    raise Exception("Ventana cerrada antes del click")
-                                
-                                # Intentar click directo
-                                next_button.click()
-                            except Exception as click_error:
-                                # Si falla, intentar con JavaScript
-                                self.logger.debug(f"Click directo falló ({click_error}), intentando con JavaScript...")
-                                try:
-                                    self.driver.execute_script("arguments[0].click();", next_button)
-                                except Exception as js_error:
-                                    self.logger.error(f"❌ Click con JavaScript también falló: {js_error}")
-                                    raise
-                            
-                            time.sleep(4)  # Esperar a que cargue la nueva página
-                            
-                            # Verificar que la ventana sigue abierta
-                            try:
-                                new_url = self.driver.current_url
-                                if new_url != current_url:
-                                    self.logger.info(f"✅ Página cambió: {new_url}")
-                                else:
-                                    self.logger.warning("⚠️  La URL no cambió después del click, esperando más tiempo...")
-                                    time.sleep(3)
-                                    new_url = self.driver.current_url
-                                    if new_url == current_url:
-                                        self.logger.warning("⚠️  La URL aún no cambió, puede haber un problema con la paginación")
-                            except Exception as url_error:
-                                self.logger.error(f"❌ Error verificando URL después del click: {url_error}")
-                                raise
-                            
-                            # Hacer scroll para cargar productos
-                            self.logger.info("📜 Haciendo scroll para cargar productos...")
-                            for i in range(3):
-                                self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
-                                time.sleep(1)
-                            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                            time.sleep(3)
-                            self.driver.execute_script("window.scrollTo(0, 0);")
-                            time.sleep(2)
-                            
-                            page_number += 1
-                        except Exception as e:
-                            self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
-                            # Intentar una vez más con método alternativo
-                            try:
-                                self.logger.info("🔄 Intentando método alternativo de click...")
-                                from selenium.webdriver.common.action_chains import ActionChains
-                                actions = ActionChains(self.driver)
-                                actions.move_to_element(next_button).click().perform()
-                                time.sleep(4)
-                                page_number += 1
-                            except Exception as e2:
-                                self.logger.error(f"❌ Método alternativo también falló: {e2}")
-                                break
-                    else:
-                        self.logger.info(f"✅ Botón deshabilitado. Paginación completada. Total de páginas procesadas: {page_number}")
+                if next_button and self._is_button_enabled(next_button):
+                    # Click en el botón de siguiente página
+                    self.logger.info(f"➡️  Avanzando a la página {page_number + 1}...")
+                    try:
+                        # Hacer scroll al botón para asegurar que sea visible
+                        self.driver.execute_script("arguments[0].scrollIntoView(true);", next_button)
+                        time.sleep(1)
+                        
+                        # Intentar hacer click
+                        next_button.click()
+                        time.sleep(3)  # Esperar a que cargue la nueva página
+                        
+                        # Hacer scroll para cargar productos
+                        self.logger.info("📜 Haciendo scroll para cargar productos...")
+                        for i in range(3):
+                            self.driver.execute_script(f"window.scrollTo(0, {(i+1) * 500});")
+                            time.sleep(1)
+                        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                        time.sleep(3)
+                        self.driver.execute_script("window.scrollTo(0, 0);")
+                        time.sleep(2)
+                        
+                        page_number += 1
+                    except Exception as e:
+                        self.logger.error(f"❌ Error al hacer click en botón de siguiente página: {e}")
                         break
                 else:
-                    self.logger.info(f"✅ No se encontró botón de siguiente página. Paginación completada. Total de páginas procesadas: {page_number}")
+                    self.logger.info(f"✅ Paginación completada. Total de páginas procesadas: {page_number}")
                     break
                     
             except Exception as e:
                 self.logger.error(f"❌ Error procesando página {page_number}: {e}")
-                # Si es un error de ventana cerrada, intentar recuperar
-                if "no such window" in str(e).lower() or "target window already closed" in str(e).lower():
-                    self.logger.warning("🔄 Ventana cerrada detectada, intentando recuperar...")
-                    try:
-                        self.driver = None
-                        if self._init_selenium_driver():
-                            # Intentar recargar la última URL conocida
-                            last_url = getattr(self, '_last_url', None)
-                            if last_url:
-                                self.logger.info(f"🔄 Recargando última URL: {last_url}")
-                                self.driver.get(last_url)
-                                time.sleep(5)
-                                # Continuar con la siguiente iteración
-                                continue
-                    except Exception as recover_error:
-                        self.logger.error(f"❌ No se pudo recuperar: {recover_error}")
                 break
     
     def _find_next_page_button(self):
@@ -567,67 +476,35 @@ class SnacksYPicoteoSpider(scrapy.Spider):
             # Verificar si tiene atributo disabled
             disabled = button.get_attribute('disabled')
             if disabled is not None and disabled != 'false':
-                self.logger.debug("Botón tiene atributo disabled")
                 return False
             
             # Verificar si tiene clase de disabled
             class_name = button.get_attribute('class') or ''
             if 'disabled' in class_name.lower():
-                self.logger.debug(f"Botón tiene clase disabled: {class_name}")
                 return False
             
             # Verificar si el elemento está visible
             if not button.is_displayed():
-                self.logger.debug("Botón no está visible")
                 return False
             
             # Verificar si hay un link <a> dentro y si tiene href
             try:
                 link = button.find_element(By.TAG_NAME, 'a')
                 href = link.get_attribute('href')
-                aria_disabled_link = link.get_attribute('aria-disabled')
-                
-                # Si el link tiene aria-disabled="true", está deshabilitado
-                if aria_disabled_link and aria_disabled_link.lower() == 'true':
-                    self.logger.debug("Link dentro del botón tiene aria-disabled=true")
-                    return False
-                
                 # Si no tiene href o href es vacío, probablemente está deshabilitado
-                if not href or href.strip() == '' or href.strip() == '#' or 'javascript:void' in href.lower():
-                    self.logger.debug(f"Link no tiene href válido: {href}")
+                if not href or href.strip() == '':
                     return False
-                
-                # Verificar clase del link
-                link_class = link.get_attribute('class') or ''
-                if 'disabled' in link_class.lower():
-                    self.logger.debug(f"Link tiene clase disabled: {link_class}")
-                    return False
-                
-                self.logger.debug(f"✅ Botón habilitado - href: {href}")
-                return True
-            except Exception as e:
+            except:
                 # Si no hay link, verificar si el botón mismo tiene atributo aria-disabled
                 aria_disabled = button.get_attribute('aria-disabled')
                 if aria_disabled and aria_disabled.lower() == 'true':
-                    self.logger.debug("Botón tiene aria-disabled=true")
                     return False
-                
-                # Si no hay link ni aria-disabled, verificar si es clickeable
-                try:
-                    # Intentar verificar si tiene onclick o similar
-                    onclick = button.get_attribute('onclick')
-                    if onclick:
-                        self.logger.debug("Botón tiene onclick, asumiendo habilitado")
-                        return True
-                except:
-                    pass
-                
-                # Si no hay link pero el botón está visible y no tiene disabled, asumir habilitado
-                self.logger.debug("No se encontró link, pero botón parece habilitado")
-                return True
+                # Si no hay link ni aria-disabled, asumir que está habilitado
+                pass
             
+            return True
         except Exception as e:
-            self.logger.error(f"❌ Error verificando si botón está habilitado: {e}")
+            self.logger.debug(f"Error verificando si botón está habilitado: {e}")
             return False
 
     def _extract_product_data(self, product_node, category_url: str, index: int) -> Optional[ProductItem]:
